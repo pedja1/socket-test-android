@@ -11,9 +11,11 @@ import android.view.Display;
 import android.view.Gravity;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import com.tehnicomsolutions.androidsocket.socketlibrary.Constants;
+import com.tehnicomsolutions.androidsocket.socketlibrary.Data;
 import com.tehnicomsolutions.androidsocket.socketlibrary.Utility;
 
 import java.io.BufferedReader;
@@ -33,7 +35,8 @@ public class MainActivity extends Activity implements Runnable
     private ServerSocket serverSocket;
     private Handler uiHandler;
     TextView tvMessages;
-    Button btnDrag;
+    Button dragView;
+    ImageView ivImage;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -43,10 +46,25 @@ public class MainActivity extends Activity implements Runnable
         initDragView();
 
         tvMessages = (TextView)findViewById(R.id.tvMessages);
+        ivImage = (ImageView)findViewById(R.id.ivImage);
 
         uiHandler = new Handler();
         serverThread = new Thread(this);
         serverThread.start();
+    }
+
+    @Override
+    protected void onDestroy()
+    {
+        super.onDestroy();
+        try
+        {
+            serverSocket.close();
+        }
+        catch (IOException e)
+        {
+            e.printStackTrace();
+        }
     }
 
     private void initDragView()
@@ -66,23 +84,23 @@ public class MainActivity extends Activity implements Runnable
         mWindowParams.format = PixelFormat.TRANSLUCENT;
         mWindowParams.windowAnimations = 0;
 
-        btnDrag = new Button(this);
-        btnDrag.setText("Drag Button");
+        dragView = new Button(this);
+        dragView.setText("Drag Button");
 
         WindowManager mWindowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
-        mWindowManager.addView(btnDrag, mWindowParams);
+        mWindowManager.addView(dragView, mWindowParams);
     }
 
     // move the drag view
     private void move(int x, int y)
     {
-        if (btnDrag != null)
+        if (dragView != null)
         {
-            WindowManager.LayoutParams layoutParams = (WindowManager.LayoutParams) btnDrag.getLayoutParams();
+            WindowManager.LayoutParams layoutParams = (WindowManager.LayoutParams) dragView.getLayoutParams();
             layoutParams.x = x;
             layoutParams.y = y;
             WindowManager mWindowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
-            mWindowManager.updateViewLayout(btnDrag, layoutParams);
+            mWindowManager.updateViewLayout(dragView, layoutParams);
         }
     }
 
@@ -105,6 +123,7 @@ public class MainActivity extends Activity implements Runnable
         {
             try
             {
+                if(serverSocket == null || serverSocket.isClosed())return;
                 socket = serverSocket.accept();
                 CommunicationThread commThread = new CommunicationThread(socket);
                 sendServerInfoToClient(socket);
@@ -150,24 +169,28 @@ public class MainActivity extends Activity implements Runnable
 
         public void run()
         {
-            StringBuilder builder = null;
+            Data data = new Data();
             while (!Thread.currentThread().isInterrupted())
             {
                 try
                 {
                     final String read = input.readLine();
                     if(read == null)return;
-                    if(Constants.DATA_START_TAG.equals(read))
+                    if(read.startsWith(Constants.DATA_START_TAG))
                     {
-                        builder = new StringBuilder();
+                        data.start();
+                        String type = read.split(" ")[1].split("=")[1];
+                        data.type = Data.Type.valueOf(type.substring(0, type.length() - 1));
                         continue;
                     }
                     if(Constants.DATA_END_TAG.equals(read))
                     {
-                        if(builder != null)
+                        if(data.isStarted())
                         {
-                            onMessageReceived(builder.toString());
-                            builder = null;
+                            String message = data.getData();
+                            Data.Type type = data.type;
+                            onMessageReceived(message, type);
+                            data.close();
                         }
                         else
                         {
@@ -175,9 +198,9 @@ public class MainActivity extends Activity implements Runnable
                         }
                         continue;
                     }
-                    if(builder != null)
+                    if(data.isStarted())
                     {
-                        builder.append(read).append("\n");
+                        data.append(read).append("\n");
                     }
                     else
                     {
@@ -194,32 +217,58 @@ public class MainActivity extends Activity implements Runnable
 
     }
 
-    public void onMessageReceived(final String message)
+    public void onMessageReceived(final String message, Data.Type type)
     {
-        int x = 0, y = 0;
-        String[] data = message.split("\n");
-        for(String str : data)
+        if (type == Data.Type.coordinates)
         {
-            if(str != null && str.startsWith("x"))
+            int x = 0, y = 0;
+            String[] data = message.split("\n");
+            for(String str : data)
             {
-                x = Utility.parseInt(str.split("=")[1], 0);
+                if(str != null && str.startsWith("x"))
+                {
+                    x = Utility.parseInt(str.split("=")[1], 0);
+                }
+                else if(str != null && str.startsWith("y"))
+                {
+                    y = Utility.parseInt(str.split("=")[1], 0);
+                }
             }
-            else if(str != null && str.startsWith("y"))
+            final int finalY = y;
+            final int finalX = x;
+            uiHandler.post(new Runnable()
             {
-                y = Utility.parseInt(str.split("=")[1], 0);
-            }
+                @Override
+                public void run()
+                {
+                    move(finalX, finalY);
+                    tvMessages.setText(/*tvMessages.getText().toString()+ */message/* + "\n"*/);
+                }
+            });
         }
-        final int finalY = y;
-        final int finalX = x;
-        uiHandler.post(new Runnable()
+        else if(type == Data.Type.plain_text)
         {
-            @Override
-            public void run()
+            uiHandler.post(new Runnable()
             {
-                move(finalX, finalY);
-                tvMessages.setText(/*tvMessages.getText().toString()+ */message/* + "\n"*/);
-            }
-        });
+                @Override
+                public void run()
+                {
+                    tvMessages.setText(/*tvMessages.getText().toString()+ */message/* + "\n"*/);
+                }
+            });
+        }
+        else if(type == Data.Type.bitmap)
+        {
+            uiHandler.post(new Runnable()
+            {
+                @Override
+                public void run()
+                {
+                    ivImage.setImageBitmap(Utility.decodeBase64(message));
+                }
+            });
+
+        }
 
     }
 }

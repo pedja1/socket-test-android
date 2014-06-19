@@ -3,6 +3,8 @@ package com.tehnicomsolutions.androidsocket.client;
 import android.app.Activity;
 import android.content.Context;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
@@ -37,13 +39,12 @@ public class MainActivity extends Activity implements Runnable, View.OnClickList
     private static final int SERVERPORT = 6000;
     private static final String SERVER_IP = "192.168.32.39";
 
-    private Socket socket;
     EditText etMessage;
     Button btnSend;
     TextView tvConnecting;
     Handler uiHandler;
     ServerConfig config;
-    Button btnDrag;
+    Button btnDrag, btnSendImage;
 
     boolean mDragMode;
 
@@ -69,12 +70,21 @@ public class MainActivity extends Activity implements Runnable, View.OnClickList
         btnSend = (Button)findViewById(R.id.btnSend);
         btnSend.setEnabled(false);
         btnSend.setOnClickListener(this);
+        btnSendImage = (Button)findViewById(R.id.btnSendImage);
+        btnSendImage.setOnClickListener(this);
         tvConnecting = (TextView)findViewById(R.id.tvConnecting);
         tvConnecting.setTextColor(Color.GREEN);
         uiHandler = new Handler();
         new Thread(this).start();
 
         initDragView();
+    }
+
+    @Override
+    protected void onDestroy()
+    {
+        super.onDestroy();
+        socketOutWriter.close();
     }
 
     private void initDragView()
@@ -129,7 +139,7 @@ public class MainActivity extends Activity implements Runnable, View.OnClickList
         viewY = (int) (pointPercentY * remoteHeight / 100);
         try
         {
-            String str = "<data>\nx=" + viewX + "\ny=" + viewY + "\n</data>";
+            String str = "<data type=coordinates>\nx=" + viewX + "\ny=" + viewY + "\n</data>";
             socketOutWriter.println(str);
         }
         catch (Exception e)
@@ -144,7 +154,7 @@ public class MainActivity extends Activity implements Runnable, View.OnClickList
         try
         {
             InetAddress serverAddr = InetAddress.getByName(SERVER_IP);
-            socket = new Socket(serverAddr, SERVERPORT);
+            Socket socket = new Socket(serverAddr, SERVERPORT);
             socketOutWriter = new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
             updateUi(true, null);
             CommunicationThread commThread = new CommunicationThread(socket);
@@ -181,16 +191,26 @@ public class MainActivity extends Activity implements Runnable, View.OnClickList
     @Override
     public void onClick(View v)
     {
-        try
+        switch (v.getId())
         {
-            String str = etMessage.getText().toString();
-            PrintWriter out = new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
-            out.println(str);
+            case R.id.btnSend:
+                try
+                {
+                    String str = "<data type=plain_text>\n" + etMessage.getText().toString() + "\n</data>";
+                    socketOutWriter.println(str);
+                }
+                catch (Exception e)
+                {
+                    e.printStackTrace();
+                }
+                break;
+            case R.id.btnSendImage:
+                Bitmap icon = BitmapFactory.decodeResource(getResources(), R.drawable.ic_launcher);
+                if (icon == null) return;
+                socketOutWriter.println("<data type=bitmap>\n" + Utility.encodeToBase64(icon) + "\n</data>");
+                break;
         }
-        catch (Exception e)
-        {
-            e.printStackTrace();
-        }
+
 
     }
 
@@ -261,19 +281,38 @@ public class MainActivity extends Activity implements Runnable, View.OnClickList
                 try
                 {
                     final String read = input.readLine();
-                    if(read == null)return;
+                    if(read == null)
+                    {
+                        clientSocket.close();
+                        uiHandler.post(new Runnable()
+                        {
+                            @Override
+                            public void run()
+                            {
+                                tvConnecting.setVisibility(View.VISIBLE);
+                                tvConnecting.setText("Disconnected");
+                                tvConnecting.setTextColor(Color.RED);
+                                btnSend.setEnabled(false);
+                                btnSendImage.setEnabled(false);
+                            }
+                        });
+                        return;
+                    }
                     if(read.startsWith(Constants.DATA_START_TAG))
                     {
                         data.start();
                         String type = read.split(" ")[1].split("=")[1];
-                        data.type = Data.Type.valueOf(type);
+                        data.type = Data.Type.valueOf(type.substring(0, type.length() - 1));
                         continue;
                     }
                     if(Constants.DATA_END_TAG.equals(read))
                     {
                         if(data.isStarted())
                         {
-                            onMessageReceived(data.close());
+                            String message = data.getData();
+                            Data.Type type = data.type;
+                            onMessageReceived(message, type);
+                            data.close();
                         }
                         else
                         {
@@ -300,7 +339,7 @@ public class MainActivity extends Activity implements Runnable, View.OnClickList
 
     }
 
-    public void onMessageReceived(final String message)
+    public void onMessageReceived(final String data, Data.Type type)
     {
         /*uiHandler.post(new Runnable()
         {
@@ -310,24 +349,26 @@ public class MainActivity extends Activity implements Runnable, View.OnClickList
                 //tvMessages.setText(tvMessages.getText().toString()+ read + "\n");
             }
         });*/
-        System.out.println(message);
-        config = new ServerConfig();
-        String[] data = message.split("\n");
-        for(String str : data)
+        if (type == Data.Type.server_config)
         {
-            if(str != null && str.startsWith("width"))
+            config = new ServerConfig();
+            String[] split = data.split("\n");
+            for(String str : split)
             {
-                config.width = Utility.parseInt(str.split("=")[1], 0);//TODO defVal should be screen value
+                if(str != null && str.startsWith("width"))
+                {
+                    config.width = Utility.parseInt(str.split("=")[1], 0);//TODO defVal should be screen value
+                }
+                else if(str != null && str.startsWith("height"))
+                {
+                    config.height = Utility.parseInt(str.split("=")[1], 0);
+                }
+                else if(str != null && str.startsWith("orientation"))
+                {
+                    config.orientation = Utility.parseInt(str.split("=")[1], Configuration.ORIENTATION_UNDEFINED);
+                }
             }
-            else if(str != null && str.startsWith("height"))
-            {
-                config.height = Utility.parseInt(str.split("=")[1], 0);
-            }
-            else if(str != null && str.startsWith("orientation"))
-            {
-                config.orientation = Utility.parseInt(str.split("=")[1], Configuration.ORIENTATION_UNDEFINED);
-            }
+            setRequestedOrientation(Utility.convertConfigurationOrientationToActivityInfoOrientation(config.orientation));
         }
-        setRequestedOrientation(Utility.convertConfigurationOrientationToActivityInfoOrientation(config.orientation));
     }
 }

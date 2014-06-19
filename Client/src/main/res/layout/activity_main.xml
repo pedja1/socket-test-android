@@ -21,6 +21,13 @@
         android:text="Send"
         android:id="@+id/btnSend"/>
 
+    <Button
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/btnSend"
+        android:text="Send Image"
+        android:id="@+id/btnSendImage"/>
+
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

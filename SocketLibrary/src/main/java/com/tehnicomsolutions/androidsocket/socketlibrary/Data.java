@@ -31,12 +31,14 @@ public class Data
         return this;
     }
 
-    public String close()
+    public void close()
     {
-        String data = builder.toString();
         builder = null;
-        return data;
     }
 
+    public String getData()
+    {
+        return builder.toString();
+    }
 
 }
