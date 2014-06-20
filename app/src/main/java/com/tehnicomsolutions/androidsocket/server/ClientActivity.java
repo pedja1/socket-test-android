@@ -1,4 +1,4 @@
-package com.tehnicomsolutions.androidsocket.client;
+package com.tehnicomsolutions.androidsocket.server;
 
 import android.app.Activity;
 import android.content.Context;
@@ -20,10 +20,6 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 
-import com.tehnicomsolutions.androidsocket.socketlibrary.Constants;
-import com.tehnicomsolutions.androidsocket.socketlibrary.Data;
-import com.tehnicomsolutions.androidsocket.socketlibrary.Utility;
-
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -34,7 +30,7 @@ import java.net.InetAddress;
 import java.net.Socket;
 
 
-public class MainActivity extends Activity implements Runnable, View.OnClickListener, View.OnTouchListener
+public class ClientActivity extends Activity implements Runnable, View.OnClickListener, View.OnTouchListener
 {
     private static final int SERVERPORT = 6000;
     private static final String SERVER_IP = "192.168.32.39";
@@ -59,7 +55,7 @@ public class MainActivity extends Activity implements Runnable, View.OnClickList
     protected void onCreate(Bundle savedInstanceState)
     {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
+        setContentView(R.layout.activity_client);
         WindowManager manager = (WindowManager) getSystemService(WINDOW_SERVICE);
         Display display = manager.getDefaultDisplay();
         Point point = new Point();
@@ -84,7 +80,7 @@ public class MainActivity extends Activity implements Runnable, View.OnClickList
     protected void onDestroy()
     {
         super.onDestroy();
-        socketOutWriter.close();
+        if(socketOutWriter != null)socketOutWriter.close();
     }
 
     private void initDragView()
@@ -206,7 +202,12 @@ public class MainActivity extends Activity implements Runnable, View.OnClickList
                 break;
             case R.id.btnSendImage:
                 Bitmap icon = BitmapFactory.decodeResource(getResources(), R.drawable.ic_launcher);
-                if (icon == null) return;
+                //mWindowManager.removeView(surfaceView);
+                if (icon == null)
+                {
+                    Log.w(Constants.LOG_TAG, "bitmap is null");
+                    return;
+                }
                 socketOutWriter.println("<data type=bitmap>\n" + Utility.encodeToBase64(icon) + "\n</data>");
                 break;
         }
@@ -283,7 +284,6 @@ public class MainActivity extends Activity implements Runnable, View.OnClickList
                     final String read = input.readLine();
                     if(read == null)
                     {
-                        clientSocket.close();
                         uiHandler.post(new Runnable()
                         {
                             @Override
@@ -332,7 +332,7 @@ public class MainActivity extends Activity implements Runnable, View.OnClickList
                 }
                 catch (IOException e)
                 {
-                    e.printStackTrace();
+                    return;
                 }
             }
         }

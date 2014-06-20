@@ -1,4 +1,4 @@
-package com.tehnicomsolutions.androidsocket.socketlibrary;
+package com.tehnicomsolutions.androidsocket.server;
 
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;

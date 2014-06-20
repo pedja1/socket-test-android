@@ -1,4 +1,4 @@
-package com.tehnicomsolutions.androidsocket.client;
+package com.tehnicomsolutions.androidsocket.server;
 
 /**
  * Created by pedja on 19.6.14. 11.35.
